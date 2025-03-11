@@ -9,3 +9,5 @@ use App\Http\Controllers\RegisterController;
 // })->middleware('auth:sanctum');
 
 Route::post('/registrasi', [RegisterController::class, 'store']); 
+Route::get('/registrasi', [RegisterController::class, 'index']); 
+Route::put('/registrasi/{id}', [RegisterController::class, 'update']); 
