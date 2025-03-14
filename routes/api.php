@@ -4,6 +4,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\LapanganController;
 use App\Http\Controllers\RegisterController;
+use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\PaymentController;
 
@@ -12,9 +13,13 @@ use App\Http\Controllers\PaymentController;
 //     return $request->user();
 // })->middleware('auth:sanctum');
 
-Route::post('/registrasi', [RegisterController::class, 'store']);
-Route::get('/registrasi', [RegisterController::class, 'index']);
-Route::put('/registrasi/{id}', [RegisterController::class, 'update']);
+Route::post('/register', [RegisterController::class, 'store']);
+Route::post('/login', [AuthController::class, 'login']);
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/me', [AuthController::class, 'me']);
+});
 
 //Lapangan
 Route::get('/fields', [LapanganController::class, 'index']); // Mendapatkan daftar lapangan
