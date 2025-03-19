@@ -1,6 +1,6 @@
 <?php
 
-// use Illuminate\Http\Request;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\LapanganController;
 use App\Http\Controllers\RegisterController;
@@ -27,6 +27,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::put('/profile/update', [ProfileController::class, 'update']);
     Route::post('/profile/upload-photo', [ProfileController::class, 'uploadPhoto']);
+});
+
+Route::middleware(['auth:sanctum', 'role:admin'])->get('/admin/dashboard', function (Request $request) {
+    return response()->json(['message' => 'Welcome, Admin!']);
 });
 
 //Lapangan
