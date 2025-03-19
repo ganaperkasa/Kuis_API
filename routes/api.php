@@ -6,6 +6,7 @@ use App\Http\Controllers\LapanganController;
 use App\Http\Controllers\RegisterController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ForgotPasswordController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\PaymentController;
 
@@ -16,6 +17,10 @@ use App\Http\Controllers\PaymentController;
 
 Route::post('/register', [RegisterController::class, 'store']);
 Route::post('/login', [AuthController::class, 'login']);
+
+// Lupa Password & Reset Password
+Route::post('/forgot-password', [ForgotPasswordController::class, 'sendResetLink']);
+Route::post('/reset-password', [ForgotPasswordController::class, 'resetPassword'])->name('password.reset');
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
