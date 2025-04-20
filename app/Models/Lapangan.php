@@ -9,12 +9,7 @@ class Lapangan extends Model
 {
     use HasFactory;
 
-    protected $table = 'lapangans'; // Nama tabel di database
-
     protected $fillable = [
-        'nama',
-        'deskripsi',
-        'harga_per_jam',
-        'tersedia'
+        'name', 'description', 'price', 'location', 'photo', 'capacity', 'type', 'status'
     ];
 }
