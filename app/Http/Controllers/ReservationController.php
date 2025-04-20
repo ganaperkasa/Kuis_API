@@ -4,60 +4,89 @@ namespace App\Http\Controllers;
 
 use App\Models\Reservation;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class ReservationController extends Controller
 {
-    // Mendapatkan daftar reservasi
+    /**
+     * Display a listing of the reservations.
+     *
+     * @return \Illuminate\Http\Response
+     */
     public function index()
     {
-        $reservations = Reservation::all();
-        return response()->json(['data' => $reservations], 200);
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+
+        // Mengambil reservasi berdasarkan role pengguna
+        $reservations = $user->role === 'admin'
+            ? Reservation::with('lapangan', 'user')->get()
+            : $user->reservations()->with('lapangan')->get(); // Menggunakan relasi reservations()
+
+        return response()->json($reservations);
     }
 
-    // Membuat reservasi baru
+    /**
+     * Store a newly created reservation in storage.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\Response
+     */
     public function store(Request $request)
     {
+        // Validasi inputan dari user
         $request->validate([
             'lapangan_id' => 'required|exists:lapangans,id',
-            'user_id' => 'required|exists:users,id',
-            'tanggal' => 'required|date',
-            'waktu_mulai' => 'required|date_format:H:i',
-            'waktu_selesai' => 'required|date_format:H:i|after:waktu_mulai',
-            'status' => 'required|in:pending,confirmed,canceled'
+            'reservation_date' => 'required|date',
+            'start_time' => 'required|date_format:H:i',
+            'end_time' => 'required|date_format:H:i|after:start_time',
         ]);
 
-        $reservation = Reservation::create($request->all());
-
-        return response()->json([
-            'message' => 'Reservasi berhasil dibuat',
-            'data' => $reservation
-        ], 201);
-    }
-
-    // Mengupdate reservasi (dengan route model binding)
-    public function update(Request $request, Reservation $reservation)
-    {
-        $request->validate([
-            'lapangan_id' => 'sometimes|required|exists:lapangans,id',
-            'user_id' => 'sometimes|required|exists:users,id',
-            'tanggal' => 'sometimes|required|date',
-            'waktu_mulai' => 'sometimes|required|date_format:H:i',
-            'waktu_selesai' => 'sometimes|required|date_format:H:i|after:waktu_mulai',
-            'status' => 'sometimes|required|in:pending,confirmed,canceled'
+        // Membuat reservasi baru
+        $reservation = Reservation::create([
+            'user_id' => Auth::id(),
+            'lapangan_id' => $request->lapangan_id,
+            'reservation_date' => $request->reservation_date,
+            'start_time' => $request->start_time,
+            'end_time' => $request->end_time,
+            'status' => 'pending', // Status awal reservasi
         ]);
 
-        $reservation->update($request->only(['lapangan_id', 'user_id', 'tanggal', 'waktu_mulai', 'waktu_selesai', 'status']));
-
         return response()->json([
-            'message' => 'Reservasi berhasil diperbarui',
-            'data' => $reservation
-        ], 200);
+            'message' => 'Reservation created successfully.',
+            'reservation' => $reservation
+        ]);
     }
 
-    // Membatalkan reservasi (dengan route model binding)
-    public function destroy(Reservation $reservation)
+    /**
+     * Update the specified reservation.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @param int $id
+     * @return \Illuminate\Http\Response
+     */
+    public function update(Request $request, $id)
     {
+        // Mencari reservasi berdasarkan ID
+        $reservation = Reservation::findOrFail($id);
+        $reservation->status = $request->status ?? $reservation->status;
+        $reservation->save();
+
+        return response()->json(['message' => 'Reservation updated.', 'reservation' => $reservation]);
+    }
+
+    /**
+     * Remove the specified reservation from storage.
+     *
+     * @param int $id
+     * @return \Illuminate\Http\Response
+     */
+    public function destroy($id)
+    {
+        // Mencari dan menghapus reservasi berdasarkan ID
+        $reservation = Reservation::findOrFail($id);
         $reservation->delete();
-        return response()->json(['message' => 'Reservasi berhasil dibatalkan'], 200);
+
+        return response()->json(['message' => 'Reservation deleted.']);
     }
 }
