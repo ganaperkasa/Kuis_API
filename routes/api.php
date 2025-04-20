@@ -34,10 +34,17 @@ Route::middleware(['auth:sanctum', 'role:admin'])->get('/admin/dashboard', funct
 });
 
 //Lapangan
-Route::get('/fields', [LapanganController::class, 'index']); // Mendapatkan daftar lapangan
-Route::post('/fields', [LapanganController::class, 'store']); // Menambahkan lapangan baru
-Route::put('/fields/{id}', [LapanganController::class, 'update']); // Mengupdate informasi lapangan
-Route::delete('/fields/{id}', [LapanganController::class, 'destroy']); // Menghapus lapangan
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/lapangan', [LapanganController::class, 'index']);
+    Route::get('/lapangan/{id}', [LapanganController::class, 'show']);
+
+    // Proteksi hanya untuk admin
+    Route::middleware('role:admin')->group(function () {
+        Route::post('/lapangan', [LapanganController::class, 'store']);
+        Route::put('/lapangan/{id}', [LapanganController::class, 'update']);
+        Route::delete('/lapangan/{id}', [LapanganController::class, 'destroy']);
+    });
+});
 
 //Reservasi
 Route::get('/reservations', [ReservationController::class, 'index']);

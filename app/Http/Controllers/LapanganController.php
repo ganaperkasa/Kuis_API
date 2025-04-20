@@ -2,71 +2,98 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Lapangan;
 use Illuminate\Http\Request;
+use App\Models\Lapangan;
+use Illuminate\Support\Facades\Storage;
 
 class LapanganController extends Controller
 {
-    // Melihat daftar lapangan
+    // ✅ 1. Get All Lapangan
     public function index()
     {
-        return response()->json(Lapangan::all(), 200);
+        return response()->json(Lapangan::all());
     }
 
-    // Menambah lapangan
+    // ✅ 2. Create Lapangan
     public function store(Request $request)
     {
         $request->validate([
-            'nama' => 'required|string|max:255',
-            'deskripsi' => 'nullable|string',
-            'harga_per_jam' => 'required|numeric|min:0',
-            'tersedia' => 'required|boolean'
+            'name' => 'required|string|max:255',
+            'price' => 'required|numeric',
+            'location' => 'required|string|max:255',
+            'capacity' => 'required|integer',
+            'type' => 'required|in:Futsal,Badminton,Basket,Tennis,Voli',
+            'status' => 'in:available,booked',
+            'photo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ]);
 
-        $lapangan = Lapangan::create($request->all());
+        $data = $request->all();
 
-        return response()->json([
-            'message' => 'Lapangan berhasil ditambahkan',
-            'data' => $lapangan
-        ], 201);
+        if ($request->hasFile('photo')) {
+            $data['photo'] = $request->file('photo')->store('lapangan_photos', 'public');
+        }
+
+        $lapangan = Lapangan::create($data);
+
+        return response()->json(['message' => 'Lapangan created successfully', 'data' => $lapangan], 201);
     }
 
-    // Mengupdate lapangan
+    // ✅ 3. Show Detail Lapangan
+    public function show($id)
+    {
+        $lapangan = Lapangan::find($id);
+        if (!$lapangan) {
+            return response()->json(['message' => 'Lapangan not found'], 404);
+        }
+        return response()->json($lapangan);
+    }
+
+    // ✅ 4. Update Lapangan
     public function update(Request $request, $id)
     {
         $lapangan = Lapangan::find($id);
-
-        // Jika lapangan tidak ditemukan, kembalikan error 404
         if (!$lapangan) {
-            return response()->json(['message' => 'Lapangan tidak ditemukan'], 404);
+            return response()->json(['message' => 'Lapangan not found'], 404);
         }
 
         $request->validate([
-            'nama' => 'sometimes|required|string|max:255',
-            'deskripsi' => 'nullable|string',
-            'harga_per_jam' => 'sometimes|required|numeric|min:0',
-            'tersedia' => 'required|boolean'
+            'name' => 'string|max:255',
+            'price' => 'numeric',
+            'location' => 'string|max:255',
+            'capacity' => 'integer',
+            'type' => 'in:Futsal,Badminton,Basket,Tennis,Voli',
+            'status' => 'in:available,booked',
+            'photo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ]);
 
-        $lapangan->update($request->only(['nama', 'deskripsi', 'harga_per_jam', 'tersedia']));
+        $data = $request->all();
 
-        return response()->json([
-            'message' => 'Lapangan berhasil diperbarui',
-            'data' => $lapangan
-        ], 200);
+        if ($request->hasFile('photo')) {
+            if ($lapangan->photo) {
+                Storage::delete('public/' . $lapangan->photo);
+            }
+            $data['photo'] = $request->file('photo')->store('lapangan_photos', 'public');
+        }
+
+        $lapangan->update($data);
+
+        return response()->json(['message' => 'Lapangan updated successfully', 'data' => $lapangan]);
     }
 
-    // Menghapus lapangan
+    // ✅ 5. Delete Lapangan
     public function destroy($id)
     {
         $lapangan = Lapangan::find($id);
-
         if (!$lapangan) {
-            return response()->json(['message' => 'Lapangan tidak ditemukan'], 404);
+            return response()->json(['message' => 'Lapangan not found'], 404);
+        }
+
+        if ($lapangan->photo) {
+            Storage::delete('public/' . $lapangan->photo);
         }
 
         $lapangan->delete();
 
-        return response()->json(['message' => 'Lapangan berhasil dihapus'], 200);
+        return response()->json(['message' => 'Lapangan deleted successfully']);
     }
 }
