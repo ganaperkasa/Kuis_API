@@ -12,4 +12,10 @@ class Lapangan extends Model
     protected $fillable = [
         'name', 'description', 'price', 'location', 'photo', 'capacity', 'type', 'status'
     ];
+
+    public function reservations()
+{
+    return $this->hasMany(Reservation::class);
+}
+
 }
