@@ -37,10 +37,23 @@ class ReservationController extends Controller
         // Validasi inputan dari user
         $request->validate([
             'lapangan_id' => 'required|exists:lapangans,id',
-            'reservation_date' => 'required|date',
+            'reservation_date' => 'required|date|after:today', // Hanya membolehkan tanggal di masa depan
             'start_time' => 'required|date_format:H:i',
-            'end_time' => 'required|date_format:H:i|after:start_time',
+            'end_time' => 'required|date_format:H:i|after:start_time', // Pastikan end_time lebih setelah start_time
         ]);
+
+        // Cek apakah sudah ada reservasi yang tumpang tindih
+        $existingReservation = Reservation::where('lapangan_id', $request->lapangan_id)
+            ->where('reservation_date', $request->reservation_date)
+            ->where(function($query) use ($request) {
+                $query->whereBetween('start_time', [$request->start_time, $request->end_time])
+                      ->orWhereBetween('end_time', [$request->start_time, $request->end_time]);
+            })
+            ->exists();
+
+        if ($existingReservation) {
+            return response()->json(['message' => 'Waktu yang dipilih sudah terpesan.'], 400);
+        }
 
         // Membuat reservasi baru
         $reservation = Reservation::create([
@@ -53,7 +66,7 @@ class ReservationController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'Reservation created successfully.',
+            'message' => 'Reservasi berhasil dibuat.',
             'reservation' => $reservation
         ]);
     }
@@ -72,7 +85,7 @@ class ReservationController extends Controller
         $reservation->status = $request->status ?? $reservation->status;
         $reservation->save();
 
-        return response()->json(['message' => 'Reservation updated.', 'reservation' => $reservation]);
+        return response()->json(['message' => 'Reservasi diperbarui.', 'reservation' => $reservation]);
     }
 
     /**
@@ -87,6 +100,6 @@ class ReservationController extends Controller
         $reservation = Reservation::findOrFail($id);
         $reservation->delete();
 
-        return response()->json(['message' => 'Reservation deleted.']);
+        return response()->json(['message' => 'Reservasi dihapus.']);
     }
 }

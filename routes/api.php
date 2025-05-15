@@ -9,6 +9,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ForgotPasswordController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\AdminUserController;
 
 
 // Route::get('/user', function (Request $request) {
@@ -55,8 +56,19 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 //Pembayaran
-Route::get('/payments', [PaymentController::class, 'index']);
-Route::post('/payments', [PaymentController::class, 'store']);
-Route::get('/payments/{id}', [PaymentController::class, 'show']);
-Route::put('/payments/{id}', [PaymentController::class, 'update']);
-Route::delete('/payments/{id}', [PaymentController::class, 'destroy']);
+Route::middleware('auth:sanctum')->post('/payment/create', [PaymentController::class, 'createTransaction']);
+Route::post('/midtrans/callback', [PaymentController::class, 'handleCallback']);
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/transactions', [PaymentController::class, 'index']);          // Melihat daftar transaksi
+    Route::get('/transactions/{id}', [PaymentController::class, 'show']);     // Melihat detail transaksi
+    Route::delete('/transactions/{id}', [PaymentController::class, 'destroy']); // Menghapus transaksi
+    Route::put('/transactions/{id}/status', [PaymentController::class, 'updateStatus']); // Mengubah status transaksi
+});
+
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
+    Route::get('/users', [AdminUserController::class, 'index']);
+    Route::get('/users/{id}', [AdminUserController::class, 'show']);
+    Route::put('/users/{id}', [AdminUserController::class, 'update']);
+    Route::delete('/users/{id}', [AdminUserController::class, 'destroy']);
+});
