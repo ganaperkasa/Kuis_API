@@ -98,20 +98,31 @@ class AuthController extends Controller
     /**
      * Mendapatkan Data User yang Sedang Login
      */
-    public function me(Request $request)
-    {
-        try {
+public function me(Request $request)
+{
+    try {
+        $user = $request->user();
+
+        if ($user instanceof User) {
+            $user->photo_url = $user->photo ? asset('storage/' . $user->photo) : null;
+
             return response()->json([
                 'success' => true,
                 'message' => 'Data user berhasil diambil',
-                'data' => $request->user()
+                'data' => $user,
             ], 200);
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Gagal mendapatkan data user',
-                'error' => $e->getMessage(),
-            ], 500);
         }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'User tidak ditemukan',
+        ], 404);
+    } catch (Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal mendapatkan data user',
+            'error' => $e->getMessage(),
+        ], 500);
     }
+}
 }

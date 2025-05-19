@@ -34,35 +34,35 @@ class ReservationController extends Controller
      */
     public function store(Request $request)
     {
-        // Validasi inputan dari user
         $request->validate([
             'lapangan_id' => 'required|exists:lapangans,id',
-            'reservation_date' => 'required|date|after:today', // Hanya membolehkan tanggal di masa depan
+            'reservation_date' => 'required|date|after:today',
             'start_time' => 'required|date_format:H:i',
-            'end_time' => 'required|date_format:H:i|after:start_time', // Pastikan end_time lebih setelah start_time
+            'end_time' => 'required|date_format:H:i|after:start_time',
         ]);
 
-        // Cek apakah sudah ada reservasi yang tumpang tindih
         $existingReservation = Reservation::where('lapangan_id', $request->lapangan_id)
             ->where('reservation_date', $request->reservation_date)
-            ->where(function($query) use ($request) {
+            ->where(function ($query) use ($request) {
                 $query->whereBetween('start_time', [$request->start_time, $request->end_time])
-                      ->orWhereBetween('end_time', [$request->start_time, $request->end_time]);
-            })
-            ->exists();
+                      ->orWhereBetween('end_time', [$request->start_time, $request->end_time])
+                      ->orWhere(function ($query) use ($request) {
+                          $query->where('start_time', '<', $request->start_time)
+                                ->where('end_time', '>', $request->end_time);
+                      });
+            })->exists();
 
         if ($existingReservation) {
             return response()->json(['message' => 'Waktu yang dipilih sudah terpesan.'], 400);
         }
 
-        // Membuat reservasi baru
         $reservation = Reservation::create([
             'user_id' => Auth::id(),
             'lapangan_id' => $request->lapangan_id,
             'reservation_date' => $request->reservation_date,
             'start_time' => $request->start_time,
             'end_time' => $request->end_time,
-            'status' => 'pending', // Status awal reservasi
+            'status' => 'pending',
         ]);
 
         return response()->json([
@@ -80,7 +80,6 @@ class ReservationController extends Controller
      */
     public function update(Request $request, $id)
     {
-        // Mencari reservasi berdasarkan ID
         $reservation = Reservation::findOrFail($id);
         $reservation->status = $request->status ?? $reservation->status;
         $reservation->save();
@@ -96,10 +95,57 @@ class ReservationController extends Controller
      */
     public function destroy($id)
     {
-        // Mencari dan menghapus reservasi berdasarkan ID
         $reservation = Reservation::findOrFail($id);
         $reservation->delete();
 
         return response()->json(['message' => 'Reservasi dihapus.']);
     }
+
+    /**
+     * Check availability of a lapangan on a given date and time.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\Response
+     */
+    public function checkAvailability(Request $request)
+    {
+        $request->validate([
+            'lapangan_id' => 'required|exists:lapangans,id',
+            'reservation_date' => 'required|date',
+            'start_time' => 'required|date_format:H:i',
+            'end_time' => 'required|date_format:H:i|after:start_time',
+        ]);
+
+        $conflict = Reservation::where('lapangan_id', $request->lapangan_id)
+            ->where('reservation_date', $request->reservation_date)
+            ->where(function ($query) use ($request) {
+                $query->whereBetween('start_time', [$request->start_time, $request->end_time])
+                      ->orWhereBetween('end_time', [$request->start_time, $request->end_time])
+                      ->orWhere(function ($query) use ($request) {
+                          $query->where('start_time', '<', $request->start_time)
+                                ->where('end_time', '>', $request->end_time);
+                      });
+            })->exists();
+
+        if ($conflict) {
+            return response()->json(['available' => false, 'message' => 'Waktu sudah terisi.']);
+        }
+
+        return response()->json(['available' => true, 'message' => 'Waktu tersedia.']);
+    }
+
+    public function show($id)
+{
+    $reservation = Reservation::with('lapangan')->findOrFail($id);
+    return response()->json([
+        'id' => $reservation->id,
+        'lapangan_name' => $reservation->lapangan->name,
+        'reservation_date' => $reservation->reservation_date,
+        'start_time' => $reservation->start_time,
+        'end_time' => $reservation->end_time,
+        'price' => $reservation->price,
+        'status' => $reservation->status,
+    ]);
+}
+
 }
