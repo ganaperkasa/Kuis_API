@@ -2,121 +2,162 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Payment;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Http\JsonResponse;
+use Midtrans\Snap;
+use Midtrans\Config;
+use Midtrans\Notification;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use App\Models\Transaction;
+use App\Models\Reservation;
+use Carbon\Carbon;
 
 class PaymentController extends Controller
 {
-    // Mendapatkan daftar pembayaran
-    public function index(): JsonResponse
+    public function __construct()
     {
-        $payments = Payment::all();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Data pembayaran berhasil diambil',
-            'data' => $payments
-        ], 200);
+        Config::$serverKey = config('midtrans.server_key');
+        Config::$isProduction = config('midtrans.is_production');
+        Config::$isSanitized = config('midtrans.sanitized');
+        Config::$is3ds = config('midtrans.3ds');
     }
 
-    // Membuat pembayaran baru
-    public function store(Request $request): JsonResponse
+    public function createTransaction(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'reservation_id' => 'required|exists:reservations,id',
-            'amount' => 'required|numeric|min:0',
-            'payment_type' => 'required|in:DP,FULL',
-            'status' => 'required|in:pending,success,failed'
+        if (!Auth::check()) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $user = Auth::user();
+        $orderId = uniqid();
+
+        Transaction::create([
+            'user_id' => $user->id,
+            'order_id' => $orderId,
+            'amount' => $request->amount,
+            'status' => 'pending',
         ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validasi error',
-                'errors' => $validator->errors(),
-            ], 422);
-        }
+        $params = [
+            'transaction_details' => [
+                'order_id' => $orderId,
+                'gross_amount' => $request->amount,
+            ],
+            'customer_details' => [
+                'first_name' => $user->name,
+                'email' => $user->email,
+            ]
+        ];
 
-        $payment = Payment::create($request->all());
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Pembayaran berhasil dibuat',
-            'data' => $payment
-        ], 201);
+        $snapToken = Snap::getSnapToken($params);
+        return response()->json(['token' => $snapToken]);
     }
 
-    // Melihat detail pembayaran
-    public function show($id): JsonResponse
+    public function payReservation($id)
     {
-        $payment = Payment::find($id);
+        $reservation = Reservation::with('lapangan', 'user')->findOrFail($id);
 
-        if (!$payment) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Pembayaran tidak ditemukan'
-            ], 404);
+        if ($reservation->status !== 'booked') {
+            return response()->json(['error' => 'Reservasi tidak valid untuk dibayar.'], 400);
         }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Detail pembayaran berhasil diambil',
-            'data' => $payment
-        ], 200);
-    }
+        $jam = Carbon::parse($reservation->end_time)->diffInHours(Carbon::parse($reservation->start_time));
+        $amount = $reservation->lapangan->harga * $jam;
 
-    // Mengupdate status pembayaran
-    public function update(Request $request, $id): JsonResponse
-    {
-        $payment = Payment::find($id);
-
-        if (!$payment) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Pembayaran tidak ditemukan'
-            ], 404);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'status' => 'required|in:pending,success,failed'
+        $transaction = Transaction::create([
+            'user_id' => $reservation->user_id,
+            'reservation_id' => $reservation->id,
+            'order_id' => 'RESV-' . $reservation->id . '-' . time(),
+            'amount' => $amount,
+            'status' => 'pending',
         ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validasi error',
-                'errors' => $validator->errors()
-            ], 422);
-        }
+        $params = [
+            'transaction_details' => [
+                'order_id' => $transaction->order_id,
+                'gross_amount' => $amount,
+            ],
+            'customer_details' => [
+                'first_name' => $reservation->user->name,
+                'email' => $reservation->user->email,
+            ]
+        ];
 
-        $payment->update(['status' => $request->status]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Status pembayaran berhasil diperbarui',
-            'data' => $payment
-        ], 200);
+        $snapToken = Snap::getSnapToken($params);
+        return response()->json(['token' => $snapToken]);
     }
 
-    // Menghapus pembayaran
-    public function destroy($id): JsonResponse
+    public function handleCallback(Request $request)
     {
-        $payment = Payment::find($id);
+        Log::info('Midtrans Callback Received', ['request' => $request->all()]);
+        $notif = new Notification();
+        $transactionStatus = $notif->transaction_status;
+        $orderId = $notif->order_id;
 
-        if (!$payment) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Pembayaran tidak ditemukan'
-            ], 404);
+        $transaction = Transaction::where('order_id', $orderId)->first();
+
+        if (!$transaction) {
+            Log::error('Transaction not found', ['order_id' => $orderId]);
+            return response()->json(['message' => 'Transaction not found'], 404);
         }
 
-        $payment->delete();
+        if ($transactionStatus === 'settlement') {
+            $transaction->status = 'success';
+            if ($transaction->reservation_id) {
+                $reservation = Reservation::find($transaction->reservation_id);
+                if ($reservation) {
+                    $reservation->status = 'paid';
+                    $reservation->save();
+                }
+            }
+        } elseif (in_array($transactionStatus, ['pending', 'capture'])) {
+            $transaction->status = 'pending';
+        } elseif (in_array($transactionStatus, ['deny', 'expire', 'cancel'])) {
+            $transaction->status = 'failed';
+        }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Pembayaran berhasil dihapus'
-        ], 200);
+        $transaction->save();
+        Log::info('Transaction status updated', ['order_id' => $orderId, 'status' => $transaction->status]);
+        return response()->json(['message' => 'Callback processed']);
+    }
+
+    public function index()
+    {
+        $user = Auth::user();
+
+        if ($user->role === 'admin') {
+            return Transaction::with('user')->get();
+        }
+
+        return Transaction::with('user')
+            ->where('user_id', $user->id)
+            ->get();
+    }
+
+    public function show($id)
+    {
+        return Transaction::with('user')->findOrFail($id);
+    }
+
+    public function destroy($id)
+    {
+        $transaction = Transaction::findOrFail($id);
+        $transaction->delete();
+
+        return response()->json(['message' => 'Transaction deleted.']);
+    }
+
+    public function updateStatus(Request $request, $id)
+    {
+        $transaction = Transaction::findOrFail($id);
+
+        $validated = $request->validate([
+            'status' => 'required|in:pending,success,failed',
+        ]);
+
+        $transaction->status = $validated['status'];
+        $transaction->save();
+
+        return response()->json(['message' => 'Status transaksi berhasil diperbarui']);
     }
 }
