@@ -46,7 +46,9 @@ class RegisterController extends Controller
                 'email' => $request->email,
                 'phone' => $request->phone,
                 'password' => Hash::make($request->password),
+                'role' => 'user',
             ]);
+
 
             return response()->json([
                 'success' => true,
