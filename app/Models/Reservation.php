@@ -20,6 +20,7 @@ class Reservation extends Model
         'start_time',
         'end_time',
         'status',
+        'price', // ditambahkan agar bisa disimpan
     ];
 
     /**

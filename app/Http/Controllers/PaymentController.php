@@ -22,6 +22,10 @@ class PaymentController extends Controller
         Config::$is3ds = config('midtrans.3ds');
     }
 
+    /**
+     * Membuat transaksi pembayaran umum (bukan reservasi).
+     * Pastikan penggunaan sesuai kebutuhan atau dihilangkan jika tidak diperlukan.
+     */
     public function createTransaction(Request $request)
     {
         if (!Auth::check()) {
@@ -29,9 +33,15 @@ class PaymentController extends Controller
         }
 
         $user = Auth::user();
-        $orderId = uniqid();
 
-        Transaction::create([
+        // Validasi input amount
+        $request->validate([
+            'amount' => 'required|numeric|min:1000', // minimal 1000 atau sesuai kebijakan
+        ]);
+
+        $orderId = uniqid('TXN-');
+
+        $transaction = Transaction::create([
             'user_id' => $user->id,
             'order_id' => $orderId,
             'amount' => $request->amount,
@@ -53,28 +63,41 @@ class PaymentController extends Controller
         return response()->json(['token' => $snapToken]);
     }
 
+    /**
+     * Membuat transaksi pembayaran berdasarkan reservasi.
+     * Hanya user pemilik reservasi dan reservasi dengan status yang valid dapat membayar.
+     */
     public function payReservation($id)
     {
         $reservation = Reservation::with('lapangan', 'user')->findOrFail($id);
 
-        if ($reservation->status !== 'booked') {
+        // Pastikan user adalah pemilik reservasi
+        if ($reservation->user_id !== Auth::id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        // Cek status reservasi, misal bisa bayar jika status 'pending' atau 'booked'
+        if (!in_array($reservation->status, ['pending', 'booked'])) {
             return response()->json(['error' => 'Reservasi tidak valid untuk dibayar.'], 400);
         }
 
-        $jam = Carbon::parse($reservation->end_time)->diffInHours(Carbon::parse($reservation->start_time));
-        $amount = $reservation->lapangan->harga * $jam;
+        // Gunakan harga total dari reservasi yang sudah dihitung dan disimpan
+        $amount = $reservation->price; 
+
+        // Membuat order_id unik untuk transaksi reservasi
+        $orderId = 'RESV-' . $reservation->id . '-' . time();
 
         $transaction = Transaction::create([
             'user_id' => $reservation->user_id,
             'reservation_id' => $reservation->id,
-            'order_id' => 'RESV-' . $reservation->id . '-' . time(),
+            'order_id' => $orderId,
             'amount' => $amount,
             'status' => 'pending',
         ]);
 
         $params = [
             'transaction_details' => [
-                'order_id' => $transaction->order_id,
+                'order_id' => $orderId,
                 'gross_amount' => $amount,
             ],
             'customer_details' => [
@@ -87,10 +110,15 @@ class PaymentController extends Controller
         return response()->json(['token' => $snapToken]);
     }
 
+    /**
+     * Callback handler dari Midtrans untuk update status transaksi dan reservasi
+     */
     public function handleCallback(Request $request)
     {
         Log::info('Midtrans Callback Received', ['request' => $request->all()]);
+        
         $notif = new Notification();
+
         $transactionStatus = $notif->transaction_status;
         $orderId = $notif->order_id;
 
@@ -101,8 +129,11 @@ class PaymentController extends Controller
             return response()->json(['message' => 'Transaction not found'], 404);
         }
 
+        // Update status transaksi berdasarkan status Midtrans
         if ($transactionStatus === 'settlement') {
             $transaction->status = 'success';
+
+            // Jika transaksi terkait reservasi, update status reservasi juga
             if ($transaction->reservation_id) {
                 $reservation = Reservation::find($transaction->reservation_id);
                 if ($reservation) {
@@ -117,10 +148,14 @@ class PaymentController extends Controller
         }
 
         $transaction->save();
+
         Log::info('Transaction status updated', ['order_id' => $orderId, 'status' => $transaction->status]);
         return response()->json(['message' => 'Callback processed']);
     }
 
+    /**
+     * Daftar semua transaksi user (atau admin semua transaksi)
+     */
     public function index()
     {
         $user = Auth::user();
@@ -134,11 +169,17 @@ class PaymentController extends Controller
             ->get();
     }
 
+    /**
+     * Detail transaksi berdasarkan ID
+     */
     public function show($id)
     {
         return Transaction::with('user')->findOrFail($id);
     }
 
+    /**
+     * Hapus transaksi berdasarkan ID
+     */
     public function destroy($id)
     {
         $transaction = Transaction::findOrFail($id);
@@ -147,6 +188,9 @@ class PaymentController extends Controller
         return response()->json(['message' => 'Transaction deleted.']);
     }
 
+    /**
+     * Update status transaksi secara manual
+     */
     public function updateStatus(Request $request, $id)
     {
         $transaction = Transaction::findOrFail($id);

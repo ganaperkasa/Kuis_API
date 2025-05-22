@@ -32,44 +32,60 @@ class ReservationController extends Controller
      * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
-    public function store(Request $request)
-    {
-        $request->validate([
-            'lapangan_id' => 'required|exists:lapangans,id',
-            'reservation_date' => 'required|date|after:today',
-            'start_time' => 'required|date_format:H:i',
-            'end_time' => 'required|date_format:H:i|after:start_time',
-        ]);
+public function store(Request $request)
+{
+    $request->validate([
+        'lapangan_id' => 'required|exists:lapangans,id',
+        'reservation_date' => 'required|date|after:today',
+        'start_time' => 'required|date_format:H:i',
+        'end_time' => 'required|date_format:H:i|after:start_time',
+    ]);
 
-        $existingReservation = Reservation::where('lapangan_id', $request->lapangan_id)
-            ->where('reservation_date', $request->reservation_date)
-            ->where(function ($query) use ($request) {
-                $query->whereBetween('start_time', [$request->start_time, $request->end_time])
-                      ->orWhereBetween('end_time', [$request->start_time, $request->end_time])
-                      ->orWhere(function ($query) use ($request) {
-                          $query->where('start_time', '<', $request->start_time)
-                                ->where('end_time', '>', $request->end_time);
-                      });
-            })->exists();
+    $existingReservation = Reservation::where('lapangan_id', $request->lapangan_id)
+        ->where('reservation_date', $request->reservation_date)
+        ->where(function ($query) use ($request) {
+            $query->whereBetween('start_time', [$request->start_time, $request->end_time])
+                  ->orWhereBetween('end_time', [$request->start_time, $request->end_time])
+                  ->orWhere(function ($query) use ($request) {
+                      $query->where('start_time', '<', $request->start_time)
+                            ->where('end_time', '>', $request->end_time);
+                  });
+        })->exists();
 
-        if ($existingReservation) {
-            return response()->json(['message' => 'Waktu yang dipilih sudah terpesan.'], 400);
-        }
-
-        $reservation = Reservation::create([
-            'user_id' => Auth::id(),
-            'lapangan_id' => $request->lapangan_id,
-            'reservation_date' => $request->reservation_date,
-            'start_time' => $request->start_time,
-            'end_time' => $request->end_time,
-            'status' => 'pending',
-        ]);
-
-        return response()->json([
-            'message' => 'Reservasi berhasil dibuat.',
-            'reservation' => $reservation
-        ]);
+    if ($existingReservation) {
+        return response()->json(['message' => 'Waktu yang dipilih sudah terpesan.'], 400);
     }
+
+    // Ambil data lapangan untuk harga
+    $lapangan = \App\Models\Lapangan::findOrFail($request->lapangan_id);
+    $startHour = (int) explode(':', $request->start_time)[0];
+    $endHour = (int) explode(':', $request->end_time)[0];
+
+    $totalHarga = 0;
+
+    for ($i = $startHour; $i < $endHour; $i++) {
+        $hargaPerJam = $lapangan->price;
+        if ($i >= 18) {
+            $hargaPerJam += 10000; // Tambahan malam
+        }
+        $totalHarga += $hargaPerJam;
+    }
+
+    $reservation = Reservation::create([
+        'user_id' => Auth::id(),
+        'lapangan_id' => $request->lapangan_id,
+        'reservation_date' => $request->reservation_date,
+        'start_time' => $request->start_time,
+        'end_time' => $request->end_time,
+        'status' => 'pending',
+        'price' => $totalHarga, // ← Simpan harga
+    ]);
+
+    return response()->json([
+        'message' => 'Reservasi berhasil dibuat.',
+        'reservation' => $reservation
+    ]);
+}
 
     /**
      * Update the specified reservation.
@@ -146,6 +162,22 @@ class ReservationController extends Controller
         'price' => $reservation->price,
         'status' => $reservation->status,
     ]);
+}
+public function updateStatus(Request $request, $id)
+{
+    $reservation = Reservation::find($id);
+    if (!$reservation) {
+        return response()->json(['message' => 'Reservasi tidak ditemukan.'], 404);
+    }
+
+    $request->validate([
+        'status' => 'required|string|in:pending,confirmed,cancelled',
+    ]);
+
+    $reservation->status = $request->status;
+    $reservation->save();
+
+    return response()->json(['message' => 'Status reservasi diperbarui.', 'data' => $reservation], 200);
 }
 
 }

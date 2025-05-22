@@ -56,6 +56,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/reservations/{id}', [ReservationController::class, 'destroy']);
     Route::get('/reservations/check', [ReservationController::class, 'checkAvailability']);
     Route::get('/reservations/{id}', [ReservationController::class, 'show']);
+    Route::put('/reservations/{id}/status', [ReservationController::class, 'updateStatus']);
 });
 
 //Pembayaran
