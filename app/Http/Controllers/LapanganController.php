@@ -23,7 +23,7 @@ class LapanganController extends Controller
             'location' => 'required|string|max:255',
             'capacity' => 'required|integer',
             'type' => 'required|in:Futsal,Badminton,Basket,Tennis,Voli',
-            'status' => 'in:available,booked',
+            'status' => 'in:Available,Booked',
             'photo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ]);
 
