@@ -53,9 +53,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/reservations', [ReservationController::class, 'index']);
     Route::post('/reservations', [ReservationController::class, 'store']);
     Route::put('/reservations/{id}', [ReservationController::class, 'update']);
+    Route::put('/reservations/{id}/update-status', [ReservationController::class, 'updateStatus']);
     Route::delete('/reservations/{id}', [ReservationController::class, 'destroy']);
     Route::get('/reservations/check', [ReservationController::class, 'checkAvailability']);
     Route::get('/reservations/{id}', [ReservationController::class, 'show']);
+    Route::put('/reservations/{id}/down-payment', [ReservationController::class, 'updateDownPayment']);
 });
 
 //Pembayaran

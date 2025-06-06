@@ -11,9 +11,11 @@ class Transaction extends Model
 
     protected $fillable = [
         'user_id',
+        'reservation_id',
         'order_id',
         'amount',
         'status',
+        'payment_type',
     ];
 
     /**
