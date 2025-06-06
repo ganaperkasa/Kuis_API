@@ -53,16 +53,44 @@ class PaymentController extends Controller
         return response()->json(['token' => $snapToken]);
     }
 
-    public function payReservation($id)
+    public function payReservation(Request $request, $id)
     {
         $reservation = Reservation::with('lapangan', 'user')->findOrFail($id);
 
-        if ($reservation->status !== 'booked') {
+        // Hanya status booked dan partially_paid yang bisa dibayar
+        if (!in_array($reservation->status, ['booked', 'partially_paid'])) {
             return response()->json(['error' => 'Reservasi tidak valid untuk dibayar.'], 400);
         }
 
         $jam = Carbon::parse($reservation->end_time)->diffInHours(Carbon::parse($reservation->start_time));
-        $amount = $reservation->lapangan->harga * $jam;
+        $totalAmount = $reservation->lapangan->harga * $jam;
+
+        // Ambil jenis pembayaran: dp / full / pelunasan
+        $paymentType = $request->input('payment_type', 'dp'); // default DP
+        $amount = 0;
+
+        if ($paymentType === 'dp') {
+            $amount = $totalAmount * 0.3;
+        } elseif ($paymentType === 'full') {
+            $amount = $totalAmount;
+        } elseif ($paymentType === 'pelunasan') {
+            // Cari transaksi DP sebelumnya yang sudah sukses
+            $dpTransaction = Transaction::where('reservation_id', $reservation->id)
+                ->where('payment_type', 'dp')
+                ->where('status', 'success')
+                ->first();
+
+            if (!$dpTransaction) {
+                return response()->json(['error' => 'Pelunasan tidak valid tanpa pembayaran DP sebelumnya.'], 400);
+            }
+
+            $amount = $totalAmount - $dpTransaction->amount;
+            if ($amount <= 0) {
+                return response()->json(['error' => 'Jumlah pelunasan tidak valid.'], 400);
+            }
+        } else {
+            return response()->json(['error' => 'Tipe pembayaran tidak valid.'], 400);
+        }
 
         $transaction = Transaction::create([
             'user_id' => $reservation->user_id,
@@ -70,6 +98,7 @@ class PaymentController extends Controller
             'order_id' => 'RESV-' . $reservation->id . '-' . time(),
             'amount' => $amount,
             'status' => 'pending',
+            'payment_type' => $paymentType,
         ]);
 
         $params = [
@@ -90,6 +119,7 @@ class PaymentController extends Controller
     public function handleCallback(Request $request)
     {
         Log::info('Midtrans Callback Received', ['request' => $request->all()]);
+
         $notif = new Notification();
         $transactionStatus = $notif->transaction_status;
         $orderId = $notif->order_id;
@@ -103,11 +133,32 @@ class PaymentController extends Controller
 
         if ($transactionStatus === 'settlement') {
             $transaction->status = 'success';
+
             if ($transaction->reservation_id) {
                 $reservation = Reservation::find($transaction->reservation_id);
                 if ($reservation) {
-                    $reservation->status = 'paid';
+                    // Cek status booking sebelum update
+                    $prevStatus = $reservation->status;
+
+                    if ($transaction->payment_type === 'full') {
+                        $reservation->status = 'paid';
+                    } elseif ($transaction->payment_type === 'dp') {
+                        // Jangan turunkan status jika sudah lunas
+                        if ($reservation->status !== 'paid') {
+                            $reservation->status = 'partially_paid';
+                        }
+                    } elseif ($transaction->payment_type === 'pelunasan') {
+                        $reservation->status = 'paid';
+                    }
+
                     $reservation->save();
+
+                    Log::info('Reservation status updated', [
+                        'reservation_id' => $reservation->id,
+                        'status_before' => $prevStatus,
+                        'status_after' => $reservation->status,
+                        'payment_type' => $transaction->payment_type,
+                    ]);
                 }
             }
         } elseif (in_array($transactionStatus, ['pending', 'capture'])) {
@@ -117,7 +168,13 @@ class PaymentController extends Controller
         }
 
         $transaction->save();
-        Log::info('Transaction status updated', ['order_id' => $orderId, 'status' => $transaction->status]);
+
+        Log::info('Transaction status updated', [
+            'order_id' => $orderId,
+            'status' => $transaction->status,
+            'payment_type' => $transaction->payment_type,
+        ]);
+
         return response()->json(['message' => 'Callback processed']);
     }
 

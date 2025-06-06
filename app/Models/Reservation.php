@@ -20,6 +20,9 @@ class Reservation extends Model
         'start_time',
         'end_time',
         'status',
+        'is_dp',
+        'dp_amount',
+        'full_price',
     ];
 
     /**
