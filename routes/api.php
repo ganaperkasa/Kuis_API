@@ -40,6 +40,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/dashboard', [DashboardAdminController::class, 'getdata']);
     Route::get('/dashboard/monthly-confirmed', [DashboardAdminController::class, 'monthlyConfirmedReservations']);
     Route::get('/dashboard/debug-reservations', [DashboardAdminController::class, 'debugReservations']);
+    Route::get('/dashboard/recent-reservations', [DashboardAdminController::class, 'recentReservations']);
 });
 //Lapangan
 Route::middleware(['auth:sanctum'])->group(function () {

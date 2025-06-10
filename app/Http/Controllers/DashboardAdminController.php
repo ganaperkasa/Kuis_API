@@ -14,7 +14,8 @@ class DashboardAdminController extends Controller
 {
     public function getdata()
     {
-        // Total users
+        // Total users yang rolenya user
+        
         $totalUsers = User::count();
 
         // Total reservations
@@ -100,6 +101,42 @@ class DashboardAdminController extends Controller
                 'message' => 'Failed to fetch monthly reservation data',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
                 'data' => array_fill(0, 12, 0) // Return zero data sebagai fallback
+            ], 500);
+        }
+    }
+    public function recentReservations()
+    {
+        try {
+            // Get recent reservations (last 10) ordered by creation date
+            $reservations = Reservation::with(['lapangan', 'user'])
+                ->orderBy('created_at', 'desc')
+                ->limit(5)
+                ->get()
+                ->map(function ($reservation) {
+                    return [
+                        'id' => $reservation->id,
+                        'reservation_date' => $reservation->reservation_date,
+                        'start_time' => $reservation->start_time,
+                        'end_time' => $reservation->end_time,
+                        'lapangan' => [
+                            'name' => $reservation->lapangan->name ?? 'Unknown',
+                        ],
+                        'user' => [
+                            'name' => $reservation->user->name ?? 'Guest',
+                            'image' => $reservation->user->profile_photo_url ?? null,
+                        ],
+                        'status' => $reservation->status,
+                        'createdAt' => $reservation->created_at->toDateTimeString(),
+                    ];
+                });
+
+            return response()->json($reservations);
+        } catch (\Exception $e) {
+            // Log the error for debugging
+            \Log::error('Error fetching recent reservations: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Failed to fetch recent reservations'
             ], 500);
         }
     }
